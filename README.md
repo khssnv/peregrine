@@ -1,3 +1,17 @@
+# Peregrine Weighted Average
+
+While original `Peregrine` use latest ticker price to calculate opportunity, this one let to setup a volume you have to trade and trace orderbooks to buy and sell with this volume. It calculates average price you will have not only bu latest ticker price, but if you will buy a pair from certain orderbook.
+
+## Usage
+```console
+virtualenv -p python3.7 venv
+source ./venv/bin/activate
+pip install -r requirements.txt
+python ./examples/multiple_coins_multiple_exchanges.py
+```
+
+If you want to know how to setup your volume, please find it in this video: https://youtu.be/g6HJEqGPA0U
+
 # Peregrine
 
 A Python library which provides several algorithms to detect arbitrage opportunities across over 120 cryptocurrency exchanges in 48 countries on over 38,000 trading pairs
@@ -199,3 +213,4 @@ These are subject to change. I currently intend to implement them after those li
 * Implementing [Yen's improvements](https://en.wikipedia.org/wiki/Bellman%E2%80%93Ford_algorithm#Improvements) to Bellman Ford 
 
     This will likely be done only after/ while upgrading to scipy so that it isn't done twice.
+

@@ -3,6 +3,14 @@ import math
 import networkx as nx
 from ccxt import async_support as ccxt
 import warnings
+import numpy as np
+import logging
+
+
+logging.basicConfig(filename="search.log", filemode='w', level=logging.ERROR, format=("%(message)s"))
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.info("Starting logger...")
 
 
 def create_multi_exchange_graph(exchanges: list, digraph=False):
@@ -39,7 +47,7 @@ def create_multi_exchange_graph(exchanges: list, digraph=False):
     return graph
 
 
-def create_weighted_multi_exchange_digraph(exchanges: list, name=True, log=False, fees=False, suppress=None):
+def create_weighted_multi_exchange_digraph(exchanges: list, name=True, log=False, fees=False, suppress=None, volume=None):
     """
     Not optimized (in favor of readability). There is multiple iterations over exchanges.
     """
@@ -74,23 +82,55 @@ def create_weighted_multi_exchange_digraph(exchanges: list, name=True, log=False
             exchange_dict['fee'] = 0
 
     graph = nx.MultiDiGraph()
-    futures = [_add_exchange_to_multi_digraph(graph, exchange, log=log, suppress=suppress) for exchange in exchanges]
+    futures = [_add_exchange_to_multi_digraph(graph, exchange, log=log, suppress=suppress, volume=volume) for exchange in exchanges]
     loop.run_until_complete(asyncio.gather(*futures))
     return graph
 
 
-async def _add_exchange_to_multi_digraph(graph: nx.MultiDiGraph, exchange, log=True, suppress=None):
-    tasks = [_add_market_to_multi_digraph(exchange, symbol, graph, log=log, suppress=suppress)
+async def _add_exchange_to_multi_digraph(graph: nx.MultiDiGraph, exchange, log=True, suppress=None, volume=None):
+    tasks = [_add_market_to_multi_digraph(exchange, symbol, graph, log=log, suppress=suppress, volume=volume)
              for symbol in exchange['object'].symbols]
     await asyncio.wait(tasks)
     await exchange['object'].close()
+
+
+async def calc_average_price_for_volume(orders, volume_pair_desired):
+    # 19 June 2019, Alisher Khassanov, <a.khssnv@gmail.com>:
+    # We replace a ticker price here by average price you will have whlie buy orders for given volume
+    """returns weighted average price from orders up to given volume
+    """
+    avg_price = None
+    considered = list()
+    prices, volumes = list(), list()
+    cum_vol_pair = 0
+    for (pri, vol), (next_pri, next_vol) in zip(orders, orders[1:]):
+        #logger.info("price: %s, volume: %s", str(pri), str(vol))
+        considered.append((pri,vol))
+        if pri*vol > volume_pair_desired: # all from first order
+            prices.append(pri)
+            volumes.append(volume_pair_desired)
+            cum_vol_pair = volume_pair_desired
+            logging.info('')
+            break
+        prices.append(pri)
+        volumes.append(vol)
+        cum_vol_pair += pri * vol
+        if cum_vol_pair + next_pri*next_vol > volume_pair_desired:
+            prices.append(next_pri)
+            volumes.append(volume_pair_desired - cum_vol_pair) # take the rest from next order to reach volume
+            cum_vol_pair += volume_pair_desired - cum_vol_pair
+            break
+
+    avg_price = np.average(prices, weights=volumes)
+
+    return avg_price, cum_vol_pair, considered
 
 
 # todo: refactor. there is a lot of code repetition here with single_exchange.py's _add_weighted_edge_to_graph
 # todo: write tests which prove market_name is always a ticker on exchange and exchange's load_markets has been called.
 # this will validate that all exceptions thrown by await exchange.fetch_ticker(market_name) are solely because of
 # ccxt's fetch_ticker
-async def _add_market_to_multi_digraph(exchange, market_name: str, graph: nx.DiGraph, log=True, suppress=None):
+async def _add_market_to_multi_digraph(exchange, market_name: str, graph: nx.DiGraph, log=True, suppress=None, volume=None):
     if suppress is None:
         raise ValueError("suppress cannot be None. Must be a list with possible values listed in docstring of"
                          "create_weighted_multi_exchange_digraph. If this error shows, something likely went awry "
@@ -106,8 +146,25 @@ async def _add_market_to_multi_digraph(exchange, market_name: str, graph: nx.DiG
         return
 
     try:
+        """
         ticker_ask = ticker['ask']
         ticker_bid = ticker['bid']
+        """
+        # 19 June 2019, Alisher Khassanov, <a.khssnv@gmail.com>:
+        # We replace a ticker price here by average price you will have whlie buy orders for given volume
+        if not volume:
+            ticker_ask = ticker['ask']
+            ticker_bid = ticker['bid']
+        else:
+            orderbook = await exchange['object'].fetch_l2_order_book(market_name)
+            ticker_ask, ask_vol, asks_cons = await calc_average_price_for_volume(orderbook['asks'], volume)
+            ticker_bid, bid_vol, bids_cons  = await calc_average_price_for_volume(orderbook['bids'], volume)
+            logger.info('== Considering %s at %s : format [price, volume] ==', market_name, str(exchange['object']))
+            logger.info('-- Considered %d asks: %s', len(asks_cons), str(asks_cons))
+            logger.info('-- Considered %d bids: %s', len(bids_cons), str(bids_cons))
+            if ask_vol < volume or bid_vol < volume: # insufficient volume in orderbook
+                return
+
     # ask and bid == None if this market does not exist.
     except TypeError:
         return
