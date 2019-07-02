@@ -40,9 +40,7 @@ async def handle(req):
     except Exception as e:
         print("An error occured:")
         print(e)
-        print("For request:")
-        print(incoming)
-        raise
+        resp = {"error": str(e)}
     return web.json_response(resp)
 
 
