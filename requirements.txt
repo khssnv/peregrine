@@ -4,3 +4,5 @@ numpy
 ccxt
 # Only necessary if you will be modifying or using cythonperegrine
 Cython
+aiohttp
+nest-asyncio
