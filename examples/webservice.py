@@ -10,6 +10,7 @@ import ast
 import ssl
 import asyncio
 from aiohttp import web
+import aiohttp_cors
 import nest_asyncio
 import argparse
 from peregrinearb import create_weighted_multi_exchange_digraph, bellman_ford_multi, \
@@ -57,6 +58,16 @@ if __name__ == "__main__":
     #ssl_context.load_cert_chain('cert.crt', 'cert.key')
 
     app = web.Application()
-    app.add_routes([web.get("/peregrine", handle)])
+    cors = aiohttp_cors.setup(app)
+    resource = cors.add(app.add_resource("/peregrine"))
+    route = cors.add(
+        resource.add_route("GET", handle), {
+            "http://gengix.com": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers=("X-Custom-Server-Header",),
+                max_age=360,
+            )
+        }
+    )
     #web.run_app(app, port=args.port, ssl_context=ssl_context)
     web.run_app(app, port=args.port)
