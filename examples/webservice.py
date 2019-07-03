@@ -6,6 +6,7 @@ if not (version_info[0] >= 3 and version_info[1] >= 7):
     raise Exception('python3.7 or higher required')
 
 
+import ast
 import ssl
 import asyncio
 from aiohttp import web
@@ -30,10 +31,13 @@ def ask_peregrine(exchanges: list, volume: int) -> list:
 
 async def handle(req):
     try:
-        incoming = await req.json()
-        print("incoming: %s" % incoming)
-        exchanges = incoming["exchanges"]
-        volume = incoming["volume"]
+        #incoming = await req.json()
+        exchanges = ast.literal_eval(req.rel_url.query["exchanges"])
+        volume = int(req.rel_url.query["volume"])
+        #print("incoming: %s" % incoming)
+        print("incoming req for exchanges: %s, volume: %s" % (exchanges, volume))
+        #exchanges = incoming["exchanges"]
+        #volume = incoming["volume"]
         print("processing...")
         results = ask_peregrine(exchanges, volume)
         print("responded: %s" % str(results))
@@ -49,9 +53,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     nest_asyncio.apply()
 
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_context.load_cert_chain('cert.crt', 'cert.key')
+    #ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    #ssl_context.load_cert_chain('cert.crt', 'cert.key')
 
     app = web.Application()
     app.add_routes([web.get("/peregrine", handle)])
-    web.run_app(app, port=args.port, ssl_context=ssl_context)
+    #web.run_app(app, port=args.port, ssl_context=ssl_context)
+    web.run_app(app, port=args.port)
